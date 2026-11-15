@@ -284,8 +284,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Widget build(BuildContext context) {
     final categories = ref.watch(expenseCategoriesProvider);
     final itemCategories =
-        ref.watch(itemCategoriesProvider).dataOrNull ?? const [];
-    final merchants = ref.watch(merchantsProvider).dataOrNull ?? const [];
+        ref.watch(itemCategoriesProvider).dataOrNull ?? const <ExpenseCategory>[];
+    final merchants = ref.watch(merchantsProvider).dataOrNull ?? const <Merchant>[];
     final canSave = !_loadingExisting && !_notFound;
 
     Widget body;

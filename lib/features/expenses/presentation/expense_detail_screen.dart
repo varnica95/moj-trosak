@@ -7,6 +7,7 @@ import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_format.dart';
 import '../../../core/utils/money.dart';
+import '../../../data/models/attachment.dart';
 import '../../../data/models/enums.dart';
 import '../../../data/models/expense.dart';
 import '../../../data/models/expense_item.dart';
@@ -318,9 +319,11 @@ class _PhotosCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final attachments = ref.watch(expenseAttachmentsProvider(expenseId)).dataOrNull;
-    final paths = [
-      for (final a in attachments ?? const [])
+    final attachments =
+        ref.watch(expenseAttachmentsProvider(expenseId)).dataOrNull ??
+        const <Attachment>[];
+    final paths = <String>[
+      for (final a in attachments)
         if (a.isImage && a.localPath != null) a.localPath!,
     ];
     if (paths.isEmpty) return const SizedBox.shrink();
