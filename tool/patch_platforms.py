@@ -5,6 +5,7 @@ Pokreće se iz korijena projekta nakon `flutter create` – lokalno
 (tool/setup_platforms.sh) i u GitHub Actions buildu.
 """
 import re
+import shutil
 from pathlib import Path
 
 APP_NAME = "Moj Trošak"
@@ -35,8 +36,24 @@ def patch_android() -> None:
             "minSdkVersion flutter.minSdkVersion",
             f"minSdkVersion Math.max(flutter.minSdkVersion, {MIN_SDK})",
         )
+        if "proguard-rules.pro" not in s:
+            if name.endswith(".kts"):
+                s += (
+                    '\nandroid {\n    buildTypes {\n        getByName("release") {\n'
+                    '            proguardFiles("proguard-rules.pro")\n        }\n    }\n}\n'
+                )
+            else:
+                s += (
+                    "\nandroid {\n    buildTypes {\n        release {\n"
+                    "            proguardFiles 'proguard-rules.pro'\n        }\n    }\n}\n"
+                )
         gradle.write_text(s, encoding="utf-8")
-        print(f"{gradle}: minSdk >= {MIN_SDK}")
+        print(f"{gradle}: minSdk >= {MIN_SDK}, proguard-rules.pro")
+
+    rules = Path(__file__).parent / "android" / "proguard-rules.pro"
+    if Path("android/app").exists() and rules.exists():
+        shutil.copy(rules, Path("android/app/proguard-rules.pro"))
+        print("android/app/proguard-rules.pro")
 
 
 def patch_ios() -> None:
