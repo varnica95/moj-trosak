@@ -1,7 +1,7 @@
 # Moj Trošak
 
 Android aplikacija (Flutter, s pripremom za iOS) za praćenje osobnih troškova.
-Ovo je **FAZA 1**: temelj aplikacije, lokalna baza i ručni unos računa.
+Trenutno stanje: **FAZA 1** (temelj, lokalna baza, ručni unos) i **FAZE 2–3** (QR skener, OCR računa).
 
 ## Pokretanje
 
@@ -27,6 +27,13 @@ Na Windowsu umjesto skripte pokrenite:
 `flutter create --platforms=android,ios --org hr.mojtrosak --project-name moj_trosak .`,
 zatim u `android/app/src/main/AndroidManifest.xml` postavite `android:label="Moj Trošak"`
 i obrišite `test/widget_test.dart` koji `flutter create` doda.
+
+## Izrada APK-a bez Fluttera (GitHub Actions)
+
+Svaki push na `main` pokreće `.github/workflows/build-apk.yml`: generira Android
+platformu, primjenjuje `tool/patch_platforms.py` (naziv, minSdk 24, R8 pravila za ML Kit),
+pokreće analizu i testove te izrađuje APK. APK se preuzima pod **Actions → zadnji
+build → Artifacts → moj-trosak-apk**.
 
 ## Arhitektura
 
@@ -79,6 +86,19 @@ automatski ponovno učitavaju.
 Tablice: `categories`, `merchants`, `expenses`, `expense_items`, `attachments`, `sync_queue`.
 `expense_items` i `attachments` su već u shemi (za fazu 3), ali ih UI još ne koristi.
 
+## Status – FAZA 2–3 (skeniranje i OCR)
+
+**Implementirano:**
+- QR/2D skener (mobile_scanner): fiskalni QR (porezna.gov.hr – datum i iznos), HUB3 PDF417 s uplatnica (iznos, primatelj, IBAN, poziv na broj), EPC QR
+- OCR fotografije ili slike iz galerije (Google ML Kit, isključivo na uređaju): trgovina, datum, broj računa, ukupno, PDV, artikli (naziv, količina, jedinična i ukupna cijena), automatska kategorija artikla
+- Rekonstrukcija redova računa iz OCR blokova (lijevi stupac nazivi + desni stupac cijene)
+- Obrazac za pregled: upozorenja o nesigurnim podacima, uređivanje/dodavanje/brisanje stavki, provjera zbroja stavki, fotografija uz račun
+- Nakon QR koda moguće je dodati fotografiju – OCR popunjava samo prazna polja i stavke
+- Ništa se ne sprema automatski – korisnik uvijek potvrđuje
+- Baza v2 (`tax_cents`), stavke i privitci u `sync_queue`
+
+**Još nije:** uvoz PDF računa, ručno uklanjanje već spremljenih fotografija.
+
 ## Status – FAZA 1
 
 **Implementirano:**
@@ -95,7 +115,7 @@ Tablice: `categories`, `merchants`, `expenses`, `expense_items`, `attachments`, 
 - Testovi: novac, datumi, repozitorij (stvarna SQLite baza u memoriji), dashboard widget
 
 **Još nije implementirano (sljedeće faze):**
-- QR skener (faza 2), OCR i stavke računa (faza 3), grafovi fl_chart (faza 4)
+- Grafovi fl_chart (faza 4), uvoz PDF računa
 - Supabase prijava, sinkronizacija, upload dokumenata (faza 5)
 - Lokalne obavijesti, izvoz podataka, enkripcija baze (SQLCipher), tamna tema, engleski jezik
 - Filtar po iznosu postoji u repozitoriju i testiran je, ali još nema UI
