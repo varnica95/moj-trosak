@@ -1,9 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/attachment_storage.dart';
+import '../../../data/models/attachment.dart';
 import '../../../data/models/enums.dart';
 import '../../../data/models/expense.dart';
 import '../../../data/models/expense_category.dart';
 import '../../../data/models/expense_filter.dart';
+import '../../../data/models/expense_item.dart';
 import '../../../data/models/merchant.dart';
 import '../../../data/providers.dart';
 import '../../../data/repositories/expense_repository.dart';
@@ -46,6 +49,24 @@ final expenseCategoriesProvider =
       return ref.watch(categoryRepositoryProvider).getExpenseCategories();
     });
 
+final itemCategoriesProvider =
+    FutureProvider.autoDispose<List<ExpenseCategory>>((ref) {
+      ref.watch(dataRevisionProvider);
+      return ref.watch(categoryRepositoryProvider).getItemCategories();
+    });
+
+final expenseItemsProvider = FutureProvider.autoDispose
+    .family<List<ExpenseItem>, String>((ref, id) {
+      ref.watch(dataRevisionProvider);
+      return ref.watch(expenseRepositoryProvider).getItems(id);
+    });
+
+final expenseAttachmentsProvider = FutureProvider.autoDispose
+    .family<List<Attachment>, String>((ref, id) {
+      ref.watch(dataRevisionProvider);
+      return ref.watch(expenseRepositoryProvider).getAttachments(id);
+    });
+
 final merchantsProvider = FutureProvider.autoDispose<List<Merchant>>((ref) {
   ref.watch(dataRevisionProvider);
   return ref.watch(merchantRepositoryProvider).getAll();
@@ -55,12 +76,20 @@ final merchantsProvider = FutureProvider.autoDispose<List<Merchant>>((ref) {
 class ExpenseActions {
   ExpenseActions({
     required ExpenseRepository repository,
+    required AttachmentStorage storage,
     required void Function() onChanged,
   }) : _repository = repository,
+       _storage = storage,
        _onChanged = onChanged;
 
   final ExpenseRepository _repository;
+  final AttachmentStorage _storage;
   final void Function() _onChanged;
+
+  /// Kopira privremene fotografije (kamera/galerija) u trajnu pohranu.
+  Future<List<StoredFile>> storeFiles(List<String> paths) async => [
+    for (final path in paths) await _storage.store(path),
+  ];
 
   Future<String> create(ExpenseDraft draft) async {
     final id = await _repository.create(draft);
@@ -87,6 +116,7 @@ class ExpenseActions {
 final expenseActionsProvider = Provider<ExpenseActions>(
   (ref) => ExpenseActions(
     repository: ref.watch(expenseRepositoryProvider),
+    storage: ref.watch(attachmentStorageProvider),
     onChanged: () => ref.read(dataRevisionProvider.notifier).bump(),
   ),
 );

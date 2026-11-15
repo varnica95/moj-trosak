@@ -1,7 +1,7 @@
 name: moj_trosak
 description: "Moj Trošak – praćenje osobnih troškova (Android, priprema za iOS)."
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.9.0
@@ -26,9 +26,14 @@ dependencies:
   # Verziju intl-a fiksira flutter_localizations, zato "any".
   intl: any
 
+  # Skeniranje i OCR (sve se izvodi na uređaju, bez slanja vanjskim servisima)
+  mobile_scanner: ^7.0.0
+  google_mlkit_text_recognition: ^0.15.0
+  image_picker: ^1.1.2
+  path_provider: ^2.1.5
+
   # Paketi za sljedeće faze dodaju se tek kada se implementiraju:
-  # FAZA 2: mobile_scanner
-  # FAZA 3: google_mlkit_text_recognition, image_picker, file_picker
+  # PDF uvoz: file_picker + renderiranje stranica
   # FAZA 4: fl_chart
   # FAZA 5: supabase_flutter, flutter_secure_storage, connectivity_plus
 

@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moj_trosak/core/utils/ids.dart';
 import 'package:moj_trosak/data/database/app_database.dart';
+import 'package:moj_trosak/data/models/attachment.dart';
 import 'package:moj_trosak/data/models/enums.dart';
 import 'package:moj_trosak/data/models/expense.dart';
 import 'package:moj_trosak/data/models/expense_filter.dart';
+import 'package:moj_trosak/data/models/expense_item.dart';
 import 'package:moj_trosak/data/repositories/category_repository.dart';
 import 'package:moj_trosak/data/repositories/expense_repository.dart';
 import 'package:moj_trosak/data/repositories/merchant_repository.dart';
@@ -276,5 +278,101 @@ void main() {
     final merchants = await MerchantRepository(database).getAll();
     expect(merchants.map((m) => m.name), isNot(contains('Nova trgovina')));
     expect(merchants.map((m) => m.name), contains('Konzum'));
+  });
+
+  test('stavke, porez i privitci se spremaju uz račun', () async {
+    final id = await repo.create(
+      ExpenseDraft(
+        merchantName: 'Konzum',
+        categoryId: Ids.category('groceries'),
+        type: ExpenseType.retail,
+        issueDate: DateTime(2026, 11, 10),
+        totalCents: 536,
+        taxCents: 107,
+        status: PaymentStatus.paid,
+        items: [
+          ExpenseItemDraft(
+            name: 'Mlijeko',
+            quantity: 2,
+            unitPriceCents: 129,
+            totalCents: 258,
+            categoryId: Ids.category('item_food'),
+          ),
+          const ExpenseItemDraft(name: 'Kruh', totalCents: 278),
+          const ExpenseItemDraft(name: '   ', totalCents: 1),
+        ],
+        newAttachments: const [
+          StoredFile(path: '/data/a.jpg', mimeType: 'image/jpeg', sizeBytes: 10),
+        ],
+      ),
+    );
+
+    final e = (await repo.getById(id))!;
+    expect(e.taxCents, 107);
+    final items = await repo.getItems(id);
+    expect(items.map((i) => i.name), ['Mlijeko', 'Kruh'], reason: 'prazan naziv se preskače');
+    expect(items.first.quantity, 2);
+    expect(items.first.unitPriceCents, 129);
+    expect(items.first.categoryName, 'Hrana');
+    final attachments = await repo.getAttachments(id);
+    expect(attachments.single.localPath, '/data/a.jpg');
+    expect(attachments.single.isImage, isTrue);
+    expect(await queueCount('expense_items'), 2);
+    expect(await queueCount('attachments'), 1);
+  });
+
+  test('izmjena zamjenjuje stavke, a null ih ne dira', () async {
+    final id = await repo.create(
+      ExpenseDraft(
+        merchantName: 'Lidl',
+        type: ExpenseType.retail,
+        issueDate: DateTime(2026, 11, 10),
+        totalCents: 300,
+        status: PaymentStatus.paid,
+        items: const [
+          ExpenseItemDraft(name: 'A', totalCents: 100),
+          ExpenseItemDraft(name: 'B', totalCents: 200),
+        ],
+      ),
+    );
+
+    await repo.update(id, draft(merchant: 'Lidl', cents: 300));
+    expect((await repo.getItems(id)).length, 2);
+
+    await repo.update(
+      id,
+      ExpenseDraft(
+        merchantName: 'Lidl',
+        type: ExpenseType.retail,
+        issueDate: DateTime(2026, 11, 10),
+        totalCents: 300,
+        status: PaymentStatus.paid,
+        items: const [ExpenseItemDraft(name: 'C', totalCents: 300)],
+      ),
+    );
+    expect((await repo.getItems(id)).map((i) => i.name), ['C']);
+    // 2 obrisane (tombstone) + 1 nova
+    expect(await queueCount('expense_items'), 3);
+  });
+
+  test('brisanje računa meko briše i stavke i privitke', () async {
+    final id = await repo.create(
+      ExpenseDraft(
+        merchantName: 'DM',
+        type: ExpenseType.retail,
+        issueDate: DateTime(2026, 11, 10),
+        totalCents: 100,
+        status: PaymentStatus.paid,
+        items: const [ExpenseItemDraft(name: 'Sapun', totalCents: 100)],
+        newAttachments: const [
+          StoredFile(path: '/data/b.jpg', mimeType: 'image/jpeg', sizeBytes: 5),
+        ],
+      ),
+    );
+    await repo.softDelete(id);
+    expect(await repo.getItems(id), isEmpty);
+    expect(await repo.getAttachments(id), isEmpty);
+    final raw = await database.db.query('expense_items');
+    expect(raw.single['deleted_at'], isNotNull);
   });
 }

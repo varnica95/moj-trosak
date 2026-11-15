@@ -12,24 +12,8 @@ flutter create \
   --project-name moj_trosak \
   .
 
-# Naziv aplikacije prikazan na uređaju.
-MANIFEST="android/app/src/main/AndroidManifest.xml"
-if [ -f "$MANIFEST" ]; then
-  sed -i.bak 's/android:label="[^"]*"/android:label="Moj Trošak"/' "$MANIFEST"
-  rm -f "$MANIFEST.bak"
-fi
-
-PLIST="ios/Runner/Info.plist"
-if [ -f "$PLIST" ]; then
-  # CFBundleDisplayName -> Moj Trošak
-  /usr/bin/env python3 - "$PLIST" <<'PY'
-import re, sys
-p = sys.argv[1]
-s = open(p, encoding="utf-8").read()
-s = re.sub(r"(<key>CFBundleDisplayName</key>\s*<string>)[^<]*(</string>)", r"\1Moj Trošak\2", s)
-open(p, "w", encoding="utf-8").write(s)
-PY
-fi
+# Naziv aplikacije, minSdk (ML Kit / skener), iOS dopuštenja za kameru.
+python3 tool/patch_platforms.py
 
 # flutter create dodaje primjer testa koji ne odgovara ovoj aplikaciji.
 rm -f test/widget_test.dart

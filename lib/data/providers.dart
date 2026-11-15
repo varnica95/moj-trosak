@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/services/attachment_storage.dart';
 import 'database/app_database.dart';
 import 'repositories/category_repository.dart';
 import 'repositories/expense_repository.dart';
@@ -22,6 +23,10 @@ final categoryRepositoryProvider = Provider<CategoryRepository>(
 
 final merchantRepositoryProvider = Provider<MerchantRepository>(
   (ref) => MerchantRepository(ref.watch(appDatabaseProvider)),
+);
+
+final attachmentStorageProvider = Provider<AttachmentStorage>(
+  (ref) => AttachmentStorage(),
 );
 
 /// Brojač izmjena podataka. Svi upiti nad bazom ga prate, pa se nakon

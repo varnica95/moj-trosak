@@ -38,6 +38,7 @@ class SettingsScreen extends ConsumerWidget {
     if (confirmed != true) return;
 
     await ref.read(appDatabaseProvider).wipeAllData();
+    await ref.read(attachmentStorageProvider).deleteAll();
     ref.read(dataRevisionProvider.notifier).bump();
     if (!context.mounted) return;
     ScaffoldMessenger.of(
@@ -85,6 +86,11 @@ class SettingsScreen extends ConsumerWidget {
                   leading: Icon(Icons.phone_android),
                   title: Text(AppStrings.storageLocal),
                   subtitle: Text(AppStrings.storageLocalDescription),
+                ),
+                ListTile(
+                  leading: Icon(Icons.document_scanner_outlined),
+                  title: Text(AppStrings.ocrOnDevice),
+                  subtitle: Text(AppStrings.ocrOnDeviceDescription),
                 ),
                 ListTile(
                   leading: Icon(Icons.cloud_off_outlined),

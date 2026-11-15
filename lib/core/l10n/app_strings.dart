@@ -1,4 +1,5 @@
 import '../constants/app_constants.dart';
+import '../utils/money.dart';
 
 /// Svi tekstovi korisničkog sučelja (hrvatski).
 ///
@@ -102,16 +103,58 @@ abstract final class AppStrings {
   static const String typeRetail = 'Maloprodaja';
   static const String typeOther = 'Ostalo';
 
-  // Skeniranje
-  static const String scanNotAvailableTitle = 'Skeniranje još nije dostupno';
-  static const String scanNotAvailableBody =
-      'Ova verzija aplikacije (Faza 1) još ne sadrži skener. '
-      'Do tada račune možete unijeti ručno.';
-  static const String scanPlannedQr = 'Skeniranje QR koda s računa';
-  static const String scanPlannedQrPhase = 'Planirano u fazi 2';
-  static const String scanPlannedOcr =
-      'Fotografija ili PDF računa (OCR, prepoznavanje artikala)';
-  static const String scanPlannedOcrPhase = 'Planirano u fazi 3';
+  // Skeniranje i OCR
+  static const String scanQrTitle = 'Skeniraj QR / barkod';
+  static const String scanQrSubtitle =
+      'QR kod s fiskalnog računa ili barkod s uplatnice (HUB3)';
+  static const String scanPhotoTitle = 'Fotografiraj račun';
+  static const String scanPhotoSubtitle =
+      'Prepoznavanje trgovine, datuma, iznosa i artikala';
+  static const String scanGalleryTitle = 'Odaberi fotografiju';
+  static const String scanGallerySubtitle = 'Fotografija računa iz galerije';
+  static const String manualEntrySubtitle = 'Unesite podatke računa sami';
+  static const String scanPrivacyNote =
+      'Prepoznavanje teksta izvodi se isključivo na vašem uređaju '
+      '(Google ML Kit). Fotografije se ne šalju vanjskim servisima.';
+  static const String scanCodeTitle = 'Skeniraj kod';
+  static const String scanCodeHint =
+      'Usmjerite kameru na QR kod računa ili barkod uplatnice.';
+  static const String torch = 'Svjetiljka';
+  static const String recognizingText = 'Prepoznajem tekst s računa…';
+  static const String cameraUnavailable =
+      'Kamera ili galerija nije dostupna. Provjerite dopuštenja aplikacije.';
+  static const String ocrFailed =
+      'Tekst nije bilo moguće prepoznati. Fotografija je priložena, '
+      'podatke unesite ručno.';
+  static const String checkRecognized = 'Provjerite prepoznate podatke';
+  static const String takePhoto = 'Fotografiraj';
+  static const String fromGallery = 'Iz galerije';
+  static const String photos = 'Fotografije';
+  static const String close = 'Zatvori';
+  static const String qrContent = 'QR sadržaj';
+  static const String tax = 'PDV';
+  static const String itemsKeptWarning =
+      'Račun već ima stavke – stavke s fotografije nisu dodane.';
+
+  // Stavke
+  static const String items = 'Stavke';
+  static const String addItem = 'Dodaj stavku';
+  static const String editItem = 'Uredi stavku';
+  static const String noItemsHint =
+      'Nema stavki. Fotografirajte račun ili dodajte stavke ručno.';
+  static const String itemName = 'Naziv artikla';
+  static const String itemNameRequired = 'Unesite naziv artikla.';
+  static const String quantity = 'Količina';
+  static const String quantityInvalid = 'Neispravna količina.';
+  static const String unitPrice = 'Jedinična cijena';
+  static const String itemTotal = 'Ukupno za stavku';
+  static const String itemTotalHelper = 'Popust unesite s minusom, npr. -0,50';
+  static const String itemCategory = 'Kategorija artikla';
+  static const String useItemsSum = 'Preuzmi';
+
+  static String itemsSumMismatch(int itemsCents, int totalCents) =>
+      'Zbroj stavki (${formatCents(itemsCents)}) razlikuje se od '
+      'ukupnog iznosa (${formatCents(totalCents)}).';
 
   // Statistika
   static const String monthComparison = 'Usporedba s prethodnim mjesecom';
@@ -133,6 +176,9 @@ abstract final class AppStrings {
   static const String storageLocal = 'Lokalno na uređaju';
   static const String storageLocalDescription =
       'Svi podaci spremaju se u lokalnu bazu i rade bez interneta.';
+  static const String ocrOnDevice = 'Prepoznavanje računa (OCR)';
+  static const String ocrOnDeviceDescription =
+      'Izvodi se na uređaju – fotografije se ne šalju vanjskim servisima.';
   static const String cloudSync = 'Sinkronizacija u oblak';
   static const String cloudSyncNotYet =
       'Još nije uključena (planirano u fazi 5, Supabase).';

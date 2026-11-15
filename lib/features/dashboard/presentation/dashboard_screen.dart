@@ -243,8 +243,7 @@ class _QuickActions extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          // Vodi na karticu "Skeniraj", koja jasno navodi da skener dolazi
-          // u FAZI 2 – nema lažne funkcionalnosti.
+          // Kartica "Skeniraj": QR/barkod ili fotografija računa (OCR).
           child: OutlinedButton.icon(
             onPressed: () => context.go(AppRoutes.scan),
             icon: const Icon(Icons.qr_code_scanner),

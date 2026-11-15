@@ -10,7 +10,7 @@ import 'package:sqflite/sqflite.dart';
 ///
 /// Iznosi su u centima (INTEGER), kalendarski datumi `YYYY-MM-DD` (TEXT).
 abstract final class DbSchema {
-  static const int version = 1;
+  static const int version = 2;
 
   static const List<String> _v1 = [
     '''
@@ -114,18 +114,33 @@ CREATE TABLE sync_queue (
 )''',
   ];
 
+  /// Migracije: ključ je verzija na koju se prelazi.
+  static const Map<int, List<String>> _migrations = {
+    2: [
+      // Porez (PDV) prepoznat OCR-om.
+      'ALTER TABLE expenses ADD COLUMN tax_cents INTEGER',
+      'CREATE INDEX idx_attachments_upload ON attachments(upload_status)',
+    ],
+  };
+
+  /// Nova instalacija: shema v1 + sve migracije redom.
   static Future<void> create(DatabaseExecutor db) async {
     for (final statement in _v1) {
       await db.execute(statement);
     }
+    await upgrade(db, 1, version);
   }
 
-  /// Migracije između verzija sheme. Svaka nova verzija dodaje svoj korak.
+  /// Nadogradnja postojeće baze bez gubitka podataka.
   static Future<void> upgrade(
     DatabaseExecutor db,
     int oldVersion,
     int newVersion,
   ) async {
-    // Za sada postoji samo verzija 1.
+    for (var v = oldVersion + 1; v <= newVersion; v++) {
+      for (final statement in _migrations[v] ?? const <String>[]) {
+        await db.execute(statement);
+      }
+    }
   }
 }

@@ -5,8 +5,10 @@ import '../../core/utils/date_format.dart';
 import '../../core/utils/ids.dart';
 import '../database/app_database.dart';
 import '../database/sync_queue_writer.dart';
+import '../models/attachment.dart';
 import '../models/enums.dart';
 import '../models/expense.dart';
+import '../models/expense_item.dart';
 import '../models/expense_filter.dart';
 import '../models/summaries.dart';
 import 'merchant_repository.dart';
@@ -131,6 +133,10 @@ LEFT JOIN categories c ON c.id = e.category_id
         row: row,
         timestamp: ts,
       );
+      if (draft.items != null) {
+        await _replaceItems(txn, id, draft.items!, ts);
+      }
+      await _insertAttachments(txn, id, draft.newAttachments, ts);
     });
     return id;
   }
@@ -150,7 +156,37 @@ LEFT JOIN categories c ON c.id = e.category_id
         'merchant_id': merchantId,
         ..._draftColumns(draft),
       }, ts);
+      if (draft.items != null) {
+        await _replaceItems(txn, id, draft.items!, ts);
+      }
+      await _insertAttachments(txn, id, draft.newAttachments, ts);
     });
+  }
+
+  /// Stavke računa (bez obrisanih), redom kako su unesene.
+  Future<List<ExpenseItem>> getItems(String expenseId) async {
+    final rows = await _db.rawQuery(
+      '''
+SELECT i.*, c.name AS category_name
+FROM expense_items i
+LEFT JOIN categories c ON c.id = i.category_id
+WHERE i.expense_id = ? AND i.deleted_at IS NULL
+ORDER BY i.sort_order
+''',
+      [expenseId],
+    );
+    return rows.map(ExpenseItem.fromRow).toList();
+  }
+
+  /// Fotografije/dokumenti računa (bez obrisanih).
+  Future<List<Attachment>> getAttachments(String expenseId) async {
+    final rows = await _db.query(
+      'attachments',
+      where: 'expense_id = ? AND deleted_at IS NULL',
+      whereArgs: [expenseId],
+      orderBy: 'created_at',
+    );
+    return rows.map(Attachment.fromRow).toList();
   }
 
   /// Ručna promjena statusa plaćanja.
@@ -183,6 +219,8 @@ LEFT JOIN categories c ON c.id = e.category_id
     final ts = toDbTimestamp(_clock());
     await _db.transaction((txn) async {
       await _applyChanges(txn, id, {'deleted_at': ts}, ts);
+      await _softDeleteChildren(txn, 'expense_items', id, ts);
+      await _softDeleteChildren(txn, 'attachments', id, ts);
     });
   }
 
@@ -357,7 +395,116 @@ WHERE deleted_at IS NULL AND issue_date >= ? AND issue_date < ?
       'invoice_number': _blankToNull(d.invoiceNumber),
       'qr_content': _blankToNull(d.qrContent),
       'note': _blankToNull(d.note),
+      'tax_cents': d.taxCents,
     };
+  }
+
+  /// Zamjenjuje stavke računa: postojeće se meko brišu, nove se upisuju.
+  /// Svaka promjena ide u `sync_queue`.
+  Future<void> _replaceItems(
+    DatabaseExecutor txn,
+    String expenseId,
+    List<ExpenseItemDraft> items,
+    String ts,
+  ) async {
+    await _softDeleteChildren(txn, 'expense_items', expenseId, ts);
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      final name = item.name.trim();
+      if (name.isEmpty) continue;
+      final row = <String, Object?>{
+        'id': Ids.newId(),
+        'expense_id': expenseId,
+        'name': name,
+        'quantity': item.quantity,
+        'unit_price_cents': item.unitPriceCents,
+        'total_cents': item.totalCents,
+        'category_id': item.categoryId,
+        'sort_order': i,
+        'created_at': ts,
+        'updated_at': ts,
+        'deleted_at': null,
+        'sync_status': SyncStatus.pending.dbValue,
+      };
+      await txn.insert('expense_items', row);
+      await SyncQueueWriter.enqueueUpsert(
+        txn,
+        table: 'expense_items',
+        entityId: row['id']! as String,
+        row: row,
+        timestamp: ts,
+      );
+    }
+  }
+
+  Future<void> _insertAttachments(
+    DatabaseExecutor txn,
+    String expenseId,
+    List<StoredFile> files,
+    String ts,
+  ) async {
+    for (final file in files) {
+      final row = <String, Object?>{
+        'id': Ids.newId(),
+        'expense_id': expenseId,
+        'local_path': file.path,
+        'remote_path': null,
+        'mime_type': file.mimeType,
+        'size_bytes': file.sizeBytes,
+        'sha256': null,
+        'upload_status': 'pending',
+        'created_at': ts,
+        'updated_at': ts,
+        'deleted_at': null,
+        'sync_status': SyncStatus.pending.dbValue,
+      };
+      await txn.insert('attachments', row);
+      await SyncQueueWriter.enqueueUpsert(
+        txn,
+        table: 'attachments',
+        entityId: row['id']! as String,
+        row: row,
+        timestamp: ts,
+      );
+    }
+  }
+
+  Future<void> _softDeleteChildren(
+    DatabaseExecutor txn,
+    String table,
+    String expenseId,
+    String ts,
+  ) async {
+    final rows = await txn.query(
+      table,
+      where: 'expense_id = ? AND deleted_at IS NULL',
+      whereArgs: [expenseId],
+    );
+    for (final r in rows) {
+      final updated = <String, Object?>{
+        ...r,
+        'deleted_at': ts,
+        'updated_at': ts,
+        'sync_status': SyncStatus.pending.dbValue,
+      };
+      await txn.update(
+        table,
+        {
+          'deleted_at': ts,
+          'updated_at': ts,
+          'sync_status': SyncStatus.pending.dbValue,
+        },
+        where: 'id = ?',
+        whereArgs: [r['id']],
+      );
+      await SyncQueueWriter.enqueueUpsert(
+        txn,
+        table: table,
+        entityId: r['id']! as String,
+        row: updated,
+        timestamp: ts,
+      );
+    }
   }
 
   Future<Map<String, Object?>> _requireRow(

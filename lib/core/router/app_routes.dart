@@ -4,6 +4,7 @@ abstract final class AppRoutes {
   static const String expenses = '/expenses';
   static const String newExpense = '/expenses/new';
   static const String scan = '/scan';
+  static const String scanQr = '/scan/qr';
   static const String statistics = '/statistics';
   static const String settings = '/settings';
 

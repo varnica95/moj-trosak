@@ -9,10 +9,12 @@ import '../../../core/utils/date_format.dart';
 import '../../../core/utils/money.dart';
 import '../../../data/models/enums.dart';
 import '../../../data/models/expense.dart';
+import '../../../data/models/expense_item.dart';
 import '../../../shared/widgets/async_value_widget.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../application/expense_providers.dart';
+import 'widgets/photo_strip.dart';
 
 /// Detalji računa s promjenom statusa, uređivanjem i brisanjem.
 class ExpenseDetailScreen extends ConsumerWidget {
@@ -176,6 +178,11 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
                     label: AppStrings.paidDate,
                     value: formatDate(e.paidDate!),
                   ),
+                if (e.taxCents != null)
+                  _DetailRow(
+                    label: AppStrings.tax,
+                    value: formatCents(e.taxCents!),
+                  ),
                 if (e.invoiceNumber != null)
                   _DetailRow(
                     label: AppStrings.invoiceNumber,
@@ -183,10 +190,19 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
                   ),
                 if (e.note != null)
                   _DetailRow(label: AppStrings.note, value: e.note!),
+                if (e.qrContent != null)
+                  _DetailRow(
+                    label: AppStrings.qrContent,
+                    value: e.qrContent!.length > 80
+                        ? '${e.qrContent!.substring(0, 80)}…'
+                        : e.qrContent!,
+                  ),
               ],
             ),
           ),
         ),
+        _ItemsCard(expenseId: e.id),
+        _PhotosCard(expenseId: e.id),
         const SizedBox(height: 16),
         if (e.isPaid)
           OutlinedButton.icon(
@@ -235,6 +251,98 @@ class _DetailRow extends StatelessWidget {
           ),
           Expanded(child: Text(value, style: textTheme.bodyMedium)),
         ],
+      ),
+    );
+  }
+}
+
+class _ItemsCard extends ConsumerWidget {
+  const _ItemsCard({required this.expenseId});
+
+  final String expenseId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(expenseItemsProvider(expenseId)).dataOrNull;
+    if (items == null || items.isEmpty) return const SizedBox.shrink();
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: Text(
+                  '${AppStrings.items} (${items.length})',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              for (final item in items)
+                ListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(item.name),
+                  subtitle: Text(
+                    [
+                      if (item.quantity != 1 && item.unitPriceCents != null)
+                        '${formatQuantity(item.quantity)} × '
+                            '${formatCents(item.unitPriceCents!)}',
+                      ?item.categoryName,
+                    ].join(' · '),
+                  ),
+                  trailing: Text(
+                    formatCents(item.totalCents),
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotosCard extends ConsumerWidget {
+  const _PhotosCard({required this.expenseId});
+
+  final String expenseId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final attachments = ref.watch(expenseAttachmentsProvider(expenseId)).dataOrNull;
+    final paths = [
+      for (final a in attachments ?? const [])
+        if (a.isImage && a.localPath != null) a.localPath!,
+    ];
+    if (paths.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                AppStrings.photos,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              PhotoStrip(paths: paths),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -2,26 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/l10n/app_strings.dart';
+import '../../../core/utils/ids.dart';
 import '../../../core/utils/money.dart';
+import '../../../data/models/attachment.dart';
 import '../../../data/models/enums.dart';
 import '../../../data/models/expense.dart';
 import '../../../data/models/expense_category.dart';
+import '../../../data/models/expense_item.dart';
 import '../../../data/models/merchant.dart';
 import '../../../data/providers.dart';
+import '../../../shared/recognition/expense_prefill.dart';
 import '../../../shared/widgets/async_value_widget.dart';
 import '../../../shared/widgets/category_icons.dart';
 import '../../../shared/widgets/date_field.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../receipt_ocr/domain/receipt_text_parser.dart';
+import '../../receipt_ocr/presentation/receipt_capture.dart';
 import '../application/expense_providers.dart';
+import 'widgets/items_section.dart';
+import 'widgets/photo_strip.dart';
+import 'widgets/scan_warnings.dart';
 
-/// Ručni unos novog računa ili izmjena postojećeg.
+/// Unos novog računa (ručno ili iz prepoznatih podataka) i izmjena postojećeg.
+///
+/// Prepoznati podaci se NIKADA ne spremaju automatski – korisnik ih ovdje
+/// pregledava, ispravlja i potvrđuje gumbom "Spremi".
 class ExpenseFormScreen extends ConsumerStatefulWidget {
-  const ExpenseFormScreen({super.key, this.expenseId});
+  const ExpenseFormScreen({super.key, this.expenseId, this.prefill});
 
   /// Ako je postavljen, obrazac uređuje postojeći račun.
   final String? expenseId;
+
+  /// Podaci iz QR skenera ili OCR-a za novi račun.
+  final ExpensePrefill? prefill;
 
   bool get isEditing => expenseId != null;
 
@@ -43,8 +59,17 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   ExpenseType _type = ExpenseType.retail;
   PaymentStatus _status = PaymentStatus.paid;
   DateTime _issueDate = DateUtils.dateOnly(DateTime.now());
+  bool _issueDateFromSource = false;
   DateTime? _dueDate;
   DateTime? _paidDate = DateUtils.dateOnly(DateTime.now());
+  int? _taxCents;
+  String? _qrContent;
+
+  List<ExpenseItemDraft> _items = [];
+  bool _itemsChanged = false;
+  List<Attachment> _existingAttachments = [];
+  final List<String> _newImagePaths = [];
+  List<String> _warnings = [];
 
   bool _loadingExisting = false;
   bool _notFound = false;
@@ -56,6 +81,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     if (widget.isEditing) {
       _loadingExisting = true;
       _loadExisting();
+    } else if (widget.prefill != null) {
+      _applyPrefill(widget.prefill!, merge: false);
     }
   }
 
@@ -67,10 +94,18 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     super.dispose();
   }
 
+  String get _merchantText =>
+      (_merchantController?.text ?? _initialMerchant).trim();
+
   Future<void> _loadExisting() async {
-    final expense = await ref
-        .read(expenseRepositoryProvider)
-        .getById(widget.expenseId!);
+    final repo = ref.read(expenseRepositoryProvider);
+    final expense = await repo.getById(widget.expenseId!);
+    final items = expense == null
+        ? const <ExpenseItemDraft>[]
+        : (await repo.getItems(expense.id)).map((i) => i.toDraft()).toList();
+    final attachments = expense == null
+        ? const <Attachment>[]
+        : await repo.getAttachments(expense.id);
     if (!mounted) return;
     setState(() {
       _loadingExisting = false;
@@ -87,10 +122,92 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       _paidDate =
           expense.paidDate ??
           (expense.isPaid ? DateUtils.dateOnly(DateTime.now()) : null);
+      _taxCents = expense.taxCents;
+      _qrContent = expense.qrContent;
       _amountController.text = centsToInput(expense.totalCents);
       _invoiceController.text = expense.invoiceNumber ?? '';
       _noteController.text = expense.note ?? '';
+      _items = items;
+      _existingAttachments = attachments;
     });
+  }
+
+  /// Popunjava obrazac prepoznatim podacima.
+  ///
+  /// Kod spajanja ([merge] = true, npr. fotografija nakon QR koda) postojeći
+  /// podaci imaju prednost – popunjavaju se samo prazna polja.
+  void _applyPrefill(ExpensePrefill p, {required bool merge}) {
+    final amountWasEmpty = _amountController.text.trim().isEmpty;
+
+    if (p.merchantName != null && (!merge || _merchantText.isEmpty)) {
+      if (_merchantController != null) {
+        _merchantController!.text = p.merchantName!;
+      } else {
+        _initialMerchant = p.merchantName!;
+      }
+      if (merge && p.type != null) _type = p.type!;
+    }
+    if (p.categoryKey != null && (!merge || _categoryId == null)) {
+      _categoryId = Ids.category(p.categoryKey!);
+    }
+    if (!merge) {
+      if (p.type != null) _type = p.type!;
+      if (p.status != null) {
+        _status = p.status!;
+        _paidDate = _status == PaymentStatus.paid
+            ? DateUtils.dateOnly(DateTime.now())
+            : null;
+      }
+    }
+    if (p.issueDate != null && (!merge || !_issueDateFromSource)) {
+      _issueDate = p.issueDate!;
+      _issueDateFromSource = true;
+      if (_status == PaymentStatus.paid && p.source == PrefillSource.qr) {
+        _paidDate = p.issueDate;
+      }
+    }
+    if (p.dueDate != null && _dueDate == null) _dueDate = p.dueDate;
+    if (p.totalCents != null && (!merge || amountWasEmpty)) {
+      _amountController.text = centsToInput(p.totalCents!);
+    }
+    if (p.taxCents != null && _taxCents == null) _taxCents = p.taxCents;
+    if (p.invoiceNumber != null && _invoiceController.text.trim().isEmpty) {
+      _invoiceController.text = p.invoiceNumber!;
+    }
+    if (p.note != null && _noteController.text.trim().isEmpty) {
+      _noteController.text = p.note!;
+    }
+    _qrContent ??= p.qrContent;
+
+    final extraWarnings = <String>[];
+    if (p.items.isNotEmpty) {
+      if (_items.isEmpty) {
+        _items = [...p.items];
+        _itemsChanged = true;
+      } else {
+        extraWarnings.add(AppStrings.itemsKeptWarning);
+      }
+    }
+    if (p.imagePath != null) _newImagePaths.add(p.imagePath!);
+
+    // Zbroj stavki se provjerava uživo u odjeljku stavki, a "iznos nije
+    // pronađen" nije relevantan ako je iznos već bio unesen (npr. iz QR-a).
+    _warnings = [
+      for (final w in p.warnings)
+        if (!w.startsWith('Zbroj artikala') &&
+            !(merge &&
+                !amountWasEmpty &&
+                w == ReceiptTextParser.totalNotFoundWarning) &&
+            !(merge && w.startsWith('QR kod fiskalnog')))
+          w,
+      ...extraWarnings,
+    ];
+  }
+
+  Future<void> _scanPhoto(ImageSource source) async {
+    final prefill = await captureReceipt(context, ref, source);
+    if (prefill == null || !mounted) return;
+    setState(() => _applyPrefill(prefill, merge: true));
   }
 
   void _onMerchantSelected(String name, List<Merchant> merchants) {
@@ -118,26 +235,32 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     if (form == null || !form.validate()) return;
 
     final cents = parseMoneyToCents(_amountController.text);
-    final merchantName = _merchantController?.text.trim() ?? '';
+    final merchantName = _merchantText;
     if (cents == null || merchantName.isEmpty) return;
-
-    final isPaid = _status == PaymentStatus.paid;
-    final draft = ExpenseDraft(
-      merchantName: merchantName,
-      categoryId: _categoryId,
-      type: _type,
-      issueDate: _issueDate,
-      dueDate: _dueDate,
-      paidDate: isPaid ? (_paidDate ?? DateUtils.dateOnly(DateTime.now())) : null,
-      totalCents: cents,
-      status: _status,
-      invoiceNumber: _invoiceController.text,
-      note: _noteController.text,
-    );
 
     setState(() => _saving = true);
     try {
       final actions = ref.read(expenseActionsProvider);
+      final stored = await actions.storeFiles(_newImagePaths);
+      final isPaid = _status == PaymentStatus.paid;
+      final draft = ExpenseDraft(
+        merchantName: merchantName,
+        categoryId: _categoryId,
+        type: _type,
+        issueDate: _issueDate,
+        dueDate: _dueDate,
+        paidDate: isPaid
+            ? (_paidDate ?? DateUtils.dateOnly(DateTime.now()))
+            : null,
+        totalCents: cents,
+        status: _status,
+        invoiceNumber: _invoiceController.text,
+        note: _noteController.text,
+        qrContent: _qrContent,
+        taxCents: _taxCents,
+        items: (!widget.isEditing || _itemsChanged) ? _items : null,
+        newAttachments: stored,
+      );
       if (widget.isEditing) {
         await actions.update(widget.expenseId!, draft);
       } else {
@@ -160,6 +283,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   @override
   Widget build(BuildContext context) {
     final categories = ref.watch(expenseCategoriesProvider);
+    final itemCategories =
+        ref.watch(itemCategoriesProvider).dataOrNull ?? const [];
     final merchants = ref.watch(merchantsProvider).dataOrNull ?? const [];
     final canSave = !_loadingExisting && !_notFound;
 
@@ -167,11 +292,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     if (_loadingExisting) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_notFound) {
-      body = const Center(child: EmptyState(message: AppStrings.expenseNotFound));
+      body = const Center(
+        child: EmptyState(message: AppStrings.expenseNotFound),
+      );
     } else {
       body = AsyncValueWidget<List<ExpenseCategory>>(
         value: categories,
-        data: (cats) => _buildForm(context, cats, merchants),
+        data: (cats) => _buildForm(context, cats, itemCategories, merchants),
       );
     }
 
@@ -204,21 +331,66 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Widget _buildForm(
     BuildContext context,
     List<ExpenseCategory> categories,
+    List<ExpenseCategory> itemCategories,
     List<Merchant> merchants,
   ) {
     const gap = SizedBox(height: 16);
     final labelStyle = Theme.of(context).textTheme.labelLarge;
-    // Ako odabrana kategorija više ne postoji, ne smije se proslijediti
+    // Ako odabrana kategorija ne postoji, ne smije se proslijediti
     // padajućem izborniku (inače baca grešku).
     final selectedCategory = categories.any((c) => c.id == _categoryId)
         ? _categoryId
         : null;
+    final photoPaths = [
+      for (final a in _existingAttachments)
+        if (a.isImage && a.localPath != null) a.localPath!,
+      ..._newImagePaths,
+    ];
 
     return Form(
       key: _formKey,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
+          if (_warnings.isNotEmpty) ...[
+            ScanWarnings(
+              warnings: _warnings,
+              onDismiss: () => setState(() => _warnings = []),
+            ),
+            gap,
+          ],
+          // Fotografija računa: OCR popunjava prazna polja i stavke.
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _scanPhoto(ImageSource.camera),
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text(AppStrings.takePhoto),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _scanPhoto(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text(AppStrings.fromGallery),
+                ),
+              ),
+            ],
+          ),
+          if (photoPaths.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            PhotoStrip(
+              paths: photoPaths,
+              onRemove: (path) {
+                if (_newImagePaths.contains(path)) {
+                  setState(() => _newImagePaths.remove(path));
+                }
+              },
+            ),
+          ],
+          gap,
           Autocomplete<String>(
             initialValue: TextEditingValue(text: _initialMerchant),
             optionsBuilder: (value) {
@@ -262,8 +434,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           ),
           gap,
           DropdownButtonFormField<String>(
-            // Ključ osvježava polje kada se kategorija postavi automatski
-            // (npr. odabirom poznate trgovine).
+            // Ključ osvježava polje kada se kategorija postavi automatski.
             key: ValueKey('category-$selectedCategory'),
             initialValue: selectedCategory,
             isExpanded: true,
@@ -277,7 +448,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                   value: c.id,
                   child: Row(
                     children: [
-                      Icon(categoryIcon(c.icon), size: 18, color: Color(c.color)),
+                      Icon(
+                        categoryIcon(c.icon),
+                        size: 18,
+                        color: Color(c.color),
+                      ),
                       const SizedBox(width: 12),
                       Flexible(
                         child: Text(c.name, overflow: TextOverflow.ellipsis),
@@ -296,6 +471,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
             ],
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: AppStrings.totalAmount,
               hintText: AppStrings.amountHint,
@@ -309,12 +485,27 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               return null;
             },
           ),
+          if (_taxCents != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(
+                '${AppStrings.tax}: ${formatCents(_taxCents!)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
           gap,
           DateField(
             label: AppStrings.issueDate,
             value: _issueDate,
             onChanged: (d) {
-              if (d != null) setState(() => _issueDate = d);
+              if (d != null) {
+                setState(() {
+                  _issueDate = d;
+                  _issueDateFromSource = true;
+                });
+              }
             },
           ),
           gap,
@@ -361,6 +552,19 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               },
             ),
           ],
+          gap,
+          ItemsSection(
+            items: _items,
+            categories: itemCategories,
+            totalCents: parseMoneyToCents(_amountController.text),
+            onChanged: (items) => setState(() {
+              _items = items;
+              _itemsChanged = true;
+            }),
+            onUseItemsSum: (sum) => setState(() {
+              if (sum > 0) _amountController.text = centsToInput(sum);
+            }),
+          ),
           gap,
           TextFormField(
             controller: _invoiceController,

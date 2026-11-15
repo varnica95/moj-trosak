@@ -6,9 +6,11 @@ import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/expenses/presentation/expense_detail_screen.dart';
 import '../../features/expenses/presentation/expense_form_screen.dart';
 import '../../features/expenses/presentation/expense_list_screen.dart';
+import '../../features/scanner/presentation/qr_scanner_screen.dart';
 import '../../features/scanner/presentation/scan_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/statistics/presentation/statistics_screen.dart';
+import '../../shared/recognition/expense_prefill.dart';
 import '../../shared/widgets/app_shell.dart';
 import 'app_routes.dart';
 
@@ -42,7 +44,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'new',
                     parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => const ExpenseFormScreen(),
+                    // `extra` nosi podatke prepoznate skenerom/OCR-om.
+                    builder: (context, state) => ExpenseFormScreen(
+                      prefill: state.extra is ExpensePrefill
+                          ? state.extra! as ExpensePrefill
+                          : null,
+                    ),
                   ),
                   GoRoute(
                     path: ':id',
@@ -69,6 +76,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: AppRoutes.scan,
                 builder: (context, state) => const ScanScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'qr',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const QrScannerScreen(),
+                  ),
+                ],
               ),
             ],
           ),

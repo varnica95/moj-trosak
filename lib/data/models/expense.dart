@@ -1,5 +1,7 @@
 import '../../core/utils/date_format.dart';
+import 'attachment.dart';
 import 'enums.dart';
+import 'expense_item.dart';
 
 /// Račun / trošak, s pridruženim podacima o izdavatelju i kategoriji.
 class Expense {
@@ -20,6 +22,7 @@ class Expense {
     this.dueDate,
     this.paidDate,
     this.paidCents = 0,
+    this.taxCents,
     this.currency = 'EUR',
     this.invoiceNumber,
     this.qrContent,
@@ -45,6 +48,7 @@ class Expense {
     paidDate: fromDbDateOrNull(r['paid_date']),
     totalCents: (r['total_cents']! as num).toInt(),
     paidCents: (r['paid_cents'] as num?)?.toInt() ?? 0,
+    taxCents: (r['tax_cents'] as num?)?.toInt(),
     currency: (r['currency'] as String?) ?? 'EUR',
     status: PaymentStatus.fromDb(r['payment_status'] as String?),
     invoiceNumber: r['invoice_number'] as String?,
@@ -70,6 +74,9 @@ class Expense {
   final DateTime? paidDate;
   final int totalCents;
   final int paidCents;
+
+  /// PDV, ako je prepoznat ili unesen.
+  final int? taxCents;
   final String currency;
   final PaymentStatus status;
   final String? invoiceNumber;
@@ -102,6 +109,9 @@ class ExpenseDraft {
     this.invoiceNumber,
     this.qrContent,
     this.note,
+    this.taxCents,
+    this.items,
+    this.newAttachments = const [],
   });
 
   final String merchantName;
@@ -115,4 +125,12 @@ class ExpenseDraft {
   final String? invoiceNumber;
   final String? qrContent;
   final String? note;
+  final int? taxCents;
+
+  /// Stavke računa. `null` znači "ne mijenjaj postojeće stavke"
+  /// (kod izmjene), prazna lista briše sve stavke.
+  final List<ExpenseItemDraft>? items;
+
+  /// Nove datoteke (fotografije) koje treba pridružiti računu.
+  final List<StoredFile> newAttachments;
 }
