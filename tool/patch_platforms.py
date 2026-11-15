@@ -40,12 +40,16 @@ def patch_android() -> None:
             if name.endswith(".kts"):
                 s += (
                     '\nandroid {\n    buildTypes {\n        getByName("release") {\n'
-                    '            proguardFiles("proguard-rules.pro")\n        }\n    }\n}\n'
+                    '            proguardFiles("proguard-rules.pro")\n        }\n    }\n'
+                    # Android lint ponekad padne unutar tuđih paketa
+                    # (npr. image_picker); ne utječe na rad aplikacije.
+                    '    lint {\n        checkReleaseBuilds = false\n    }\n}\n'
                 )
             else:
                 s += (
                     "\nandroid {\n    buildTypes {\n        release {\n"
-                    "            proguardFiles 'proguard-rules.pro'\n        }\n    }\n}\n"
+                    "            proguardFiles 'proguard-rules.pro'\n        }\n    }\n"
+                    "    lint {\n        checkReleaseBuilds false\n    }\n}\n"
                 )
         gradle.write_text(s, encoding="utf-8")
         print(f"{gradle}: minSdk >= {MIN_SDK}, proguard-rules.pro")
